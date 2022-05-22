@@ -3,6 +3,9 @@ from django.urls import reverse
 
 from posts.models import Group, Post, User
 
+FIRST_PAGE = 10
+SECOND_PAGE = 5
+
 
 class PaginatorViewsTest(TestCase):
     """Тест паджинатора"""
@@ -15,64 +18,31 @@ class PaginatorViewsTest(TestCase):
             slug='test-slug',
             description='Тестовое описание',
         )
-        for i in range(1, 15):
-            cls.post = Post.objects.create(
-                text=f'Тестовый текст{i}',
-                author=cls.user,
-                group=cls.group,
-            )
+        posts = [Post(
+            author=cls.user, group=cls.group, text=str(i)) for i in range(15)]
+        Post.objects.bulk_create(posts)
 
     def setUp(self):
         self.guest_client = Client()
 
-    def test_first_index_page_contains_10_posts(self):
-        """На первой странице index выводится 10 постов"""
-        response = self.guest_client.get(
-            reverse('posts:index')
-        )
-        self.assertEqual(len(response.context['page_obj']), 10)
-
-    def test_second_index_page_contains_4_posts(self):
-        """На второй странице index выводится 4 поста"""
-        response = self.guest_client.get(
-            reverse('posts:index') + '?page=2')
-        self.assertEqual(len(response.context['page_obj']), 4)
-
-    def test_first_group_list_page_contains_10_posts(self):
-        """На первой странице group list выводится 10 постов"""
-        response = self.guest_client.get(
+    def test_paginator(self):
+        context = {
+            reverse('posts:index'): FIRST_PAGE,
+            reverse('posts:index') + '?page=2': SECOND_PAGE,
             reverse(
-                'posts:group_list',
-                kwargs={'slug': self.group.slug}
-            )
-        )
-        self.assertEqual(len(response.context['page_obj']), 10)
-
-    def test_second_group_list_page_contains_4_posts(self):
-        """На второй странице group list выводится 4 поста"""
-        response = self.guest_client.get(
+                'posts:group_list', kwargs={'slug': 'test-slug'}
+            ): FIRST_PAGE,
             reverse(
-                'posts:group_list', kwargs={'slug': self.group.slug}
-            ) + '?page=2'
-        )
-        self.assertEqual(len(response.context['page_obj']), 4)
-
-    def test_first_profile_page_contains_10_posts(self):
-        """На первой странице profile выводится 10 постов"""
-        response = self.guest_client.get(
+                'posts:group_list', kwargs={'slug': 'test-slug'}
+            ) + '?page=2': SECOND_PAGE,
             reverse(
-                'posts:profile',
-                kwargs={'username': self.post.author}
-            )
-        )
-        self.assertEqual(len(response.context['page_obj']), 10)
-
-    def test_second_profile_page_contains_4_posts(self):
-        """На второй странице profile выводится 4 поста"""
-        response = self.guest_client.get(
+                'posts:profile', kwargs={'username': 'test_user'}
+            ): FIRST_PAGE,
             reverse(
-                'posts:profile',
-                kwargs={'username': self.post.author}
-            ) + '?page=2'
-        )
-        self.assertEqual(len(response.context['page_obj']), 4)
+                'posts:profile', kwargs={'username': 'test_user'}
+            ) + '?page=2': SECOND_PAGE,
+        }
+        for reverse_page, len_posts in context.items():
+            with self.subTest(reverse=reverse):
+                self.assertEqual(len(self.client.get(
+                    reverse_page).context.get('page_obj')), len_posts)
