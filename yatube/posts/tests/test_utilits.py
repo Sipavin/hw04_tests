@@ -44,5 +44,5 @@ class PaginatorViewsTest(TestCase):
         }
         for reverse_page, len_posts in context.items():
             with self.subTest(reverse=reverse):
-                self.assertEqual(len(self.client.get(
+                self.assertEqual(len(self.guest_client.get(
                     reverse_page).context.get('page_obj')), len_posts)

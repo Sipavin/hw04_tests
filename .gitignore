@@ -151,3 +151,8 @@ htmlcov/
 .coverage.*
 coverage.xml
 *.cover
+
+# Media when debug is true
+static/
+yatube/posts/static/
+yatube/media/

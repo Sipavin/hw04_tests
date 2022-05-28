@@ -1,8 +1,11 @@
 from django.test import Client, TestCase
 from django.contrib.auth import get_user_model
 from django.urls import reverse
+from django.core.files.uploadedfile import SimpleUploadedFile
+from django import forms
+from django.core.cache import cache
 
-from posts.models import Group, Post
+from posts.models import Group, Post, Comment
 from posts.forms import PostForm
 
 User = get_user_model()
@@ -13,6 +16,17 @@ class PostsPagesTests(TestCase):
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
+        cls.small_image = (
+            b'\x47\x49\x46\x38\x39\x61\x02\x00'
+            b'\x01\x00\x80\x00\x00\x00\x00\x00'
+            b'\xFF\xFF\xFF\x21\xF9\x04\x00\x00'
+            b'\x00\x00\x00\x2C\x00\x00\x00\x00'
+            b'\x02\x00\x01\x00\x00\x02\x02\x0C'
+            b'\x0A\x00\x3B'
+        )
+        cls.upload = SimpleUploadedFile(name='small_image.gif',
+                                        content=cls.small_image,
+                                        content_type='image/gif')
         cls.user = User.objects.create_user(username='test_user')
         cls.group = Group.objects.create(
             title='Тестовое название группы',
@@ -28,9 +42,11 @@ class PostsPagesTests(TestCase):
             text='Тестовый текст',
             author=cls.user,
             group=cls.group,
+            image=cls.upload,
         )
 
     def setUp(self):
+        # self.user2 = User.objects.create_user(username='test_comment_user')
         self.guest_client = Client()
         self.authorized_client = Client()
         self.authorized_client.force_login(self.user)
@@ -94,19 +110,34 @@ class PostsPagesTests(TestCase):
     def test_post_detail_page_show_correct_context(self):
         """Шаблон post detail сформирован с правильным контекстом."""
         post = PostsPagesTests.post
+        Comment.objects.create(
+            post=PostsPagesTests.post,
+            author=self.user,
+            text='Тестовый комент',
+        )
         response = self.guest_client.get(
             reverse(
                 'posts:post_detail',
                 kwargs={'post_id': post.id},
             )
         )
+        comment = response.context.get('comments')[0]
+        self.assertIsInstance(comment, Comment)
+        self.assertEqual(comment.post, PostsPagesTests.post)
+        self.assertEqual(comment.author, self.user)
+        self.assertEqual(comment.text, 'Тестовый комент')
         self.assertEqual(response.context.get('post'), post)
+        field = response.context['form'].fields['text']
+        self.assertIsInstance(field, forms.fields.CharField)
+        self.assertEqual(
+            response.context.get('posts_count'),
+            Post.objects.filter(author=post.author).count()
+        )
 
     def test_create_post_page_show_correct_context(self):
         """Шаблон create post сформирован с правильным контекстом."""
         response = self.authorized_client.get(reverse('posts:post_create'))
         self.assertIsInstance(response.context.get('form'), PostForm)
-        self.assertFalse(response.context.get('is_edit'))
 
     def test_edit_post_page_show_correct_context(self):
         """Шаблон edit post сформирован с правильным контекстом."""
@@ -142,3 +173,19 @@ class PostsPagesTests(TestCase):
             reverse('posts:group_list', kwargs={'slug': self.group2.slug})
         )
         self.assertNotIn(post, response.context.get('page_obj'))
+        group2 = response.context.get('group')
+        self.assertEqual(group2, PostsPagesTests.group2)
+
+    def test_index_cache(self):
+        new_post = Post.objects.create(
+            text='Тестовый текст2',
+            author=PostsPagesTests.user,
+            group=PostsPagesTests.group,
+        )
+        content1 = self.authorized_client.get(reverse('posts:index')).content
+        new_post.delete()
+        content2 = self.authorized_client.get(reverse('posts:index')).content
+        self.assertEqual(content1, content2)
+        cache.clear()
+        content3 = self.authorized_client.get(reverse('posts:index')).content
+        self.assertNotEqual(content1, content3)
